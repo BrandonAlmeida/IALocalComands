@@ -1,53 +1,125 @@
 """
-Install the Google AI Python SDK
-
-$ pip install google-generativeai
-
-See the getting started guide for more information:
-https://ai.google.dev/gemini-api/docs/get-started/python
+Assistente desktop com Gemini
 """
+
 import subprocess
 import platform
+import json
+import signal
+import os
+from colorama import Fore, Style
 import google.generativeai as genai
 from rich.markdown import Markdown
 from rich.console import Console
-import signal
-import json
+
+def obter_input():                                                                                                                                                                  
+    """Obtém o input do usuário com destaque em amarelo."""
+    print(f"{Fore.BLUE}{Style.BRIGHT}---")
+    input_text = input(f"{Fore.GREEN}{Style.BRIGHT}>>> ")
+    print(f"{Fore.BLUE}{Style.BRIGHT}---{Style.RESET_ALL}")
+    return input_text
 
 def create_getcmd_json(content):
-  """Cria um JSON para solicitar um comando ao Gemini."""
-  data = {
-    "type": "getcmd",
-    "cmd": "",
-    "content": content
-  }
-  return json.dumps(data)  
+    """Cria um JSON para solicitar um comando ao Gemini."""
+    data = {
+      "type": "getcmd",
+      "cmd": "",
+      "content": content
+    }
+    return json.dumps(data)
 
 def create_localcmd_json(cmd, content):
-  """Cria um JSON para enviar o resultado de um comando local."""
-  data = {
-    "type": "localcmd",
-    "cmd": cmd,
-    "content": content 
-  }
-  return json.dumps(data)
+    """Cria um JSON para enviar o resultado de um comando local."""
+    data = {
+      "type": "localcmd",
+      "cmd": cmd,
+      "content": content
+    }
+    return json.dumps(data)
 
 def create_default_json(content):
-  """Cria um JSON para mensagens padrão."""
-  data = {
-    "type": "default",
-    "cmd": "",
-    "content": content
-  }
-  return json.dumps(data)
+    """Cria um JSON para mensagens padrão."""
+    data = {
+      "type": "default",
+      "cmd": "",
+      "content": content
+    }
+    return json.dumps(data)
 
-def signal_handler(sig, frame):                                                                                                                      
-    print('Saindo...')                                                                                                                               
-    exit(0)                                                                                                                                          
-                                                                                                                                                     
+def send_command_to_gemini(chat_session, command):
+    """Envia um comando ao Gemini e retorna a resposta."""
+    prompt = create_getcmd_json(command)
+    response = chat_session.send_message(prompt)
+    return response
+
+def execute_local_command(command):
+    """Executa um comando local e retorna a saída."""
+    try:
+        if "cd " in command[0:3]:
+            dpath = command[3:]
+            os.chdir(dpath)
+            cmdoutdec = subprocess.check_output("pwd", shell=True).decode()
+        else:
+            cmdoutput = subprocess.check_output(command, shell=True)
+            cmdoutdec = cmdoutput.decode()
+        return cmdoutdec
+    except Exception as erro:
+        return f"Erro: {erro}\nNada Enviado"
+
+def handle_user_input(chat_session):
+    """Processa a entrada do usuário e interage com o Gemini."""
+    while True:
+        try:
+            quest = obter_input()
+            if quest == "$:exit":
+                confirmacao = input("Tem certeza que deseja sair? (s/n): ")
+                if confirmacao.lower() == 's':
+                    print('Saindo...')
+                    break
+
+                continue
+
+            if "cmd:" in quest[0:4]:
+                response = send_command_to_gemini(chat_session, quest)
+                iareturn = response.text
+                print(f"COMANDO RETORNADO: {iareturn}")
+                cmd = response.text.replace("\n", "").replace("`", "").replace("```", "").replace("cmd:", "").strip()
+                cmdoutdec = execute_local_command(cmd)
+                if cmdoutdec == "":
+                    print("Saida do comando vazia, nada enviado")
+                    continue
+                response = chat_session.send_message(create_localcmd_json(cmd, cmdoutdec))
+                print(cmdoutdec)
+                continue
+
+            if "/:" in quest[0:2]:
+                cmd = quest.replace("/:", "").strip()
+                cmdoutdec = execute_local_command(cmd)
+                response = chat_session.send_message(create_localcmd_json(cmd, cmdoutdec))
+                print(cmdoutdec)
+                continue
+
+            cmd = create_default_json(quest)
+            print(type(cmd))
+            print(quest)
+            response = chat_session.send_message(cmd)
+            md = Markdown(response.text)
+            console = Console()
+            console.print(md)
+        except Exception as erro:
+            print(f"Erro: {erro}\nNada Enviado")
+            continue
+
+def signal_handler(sig, frame):
+    """Sai com classe ao utilizar CTRL + C"""
+    print(f"Para sair digite {Fore.RED}{Style.BRIGHT}$:exit{Style.RESET_ALL}")
+
 signal.signal(signal.SIGINT, signal_handler)
 
-apikey = str(input("API KEY: "))
+with open('apikey', 'r') as f:
+    api_key = f.read().strip()
+apikey = api_key #str(input("API KEY: "))
+
 sysop = platform.system()
 genai.configure(api_key=apikey)
 
@@ -84,13 +156,13 @@ model = genai.GenerativeModel(
   generation_config=generation_config,
   system_instruction=f"""Você é um agente projetado para auxiliar na execução de comandos em um sistema {sysop}. Você receberá instruções em formato JSON.
 
-- Mensagens do tipo "getcmd" solicitam um comando a ser executado. 
-- Mensagens do tipo "localcmd" informam o resultado da execução do último comando. 
-- Mensagens do tipo "default"  são mensagens informativas. 
+- Mensagens do tipo "getcmd" solicitam um comando a ser executado.
+- Mensagens do tipo "localcmd" informam o resultado da execução do último comando.
+- Mensagens do tipo "default"  são mensagens informativas.
 
-Ao receber uma mensagem "getcmd", analise o conteúdo e responda com o comando a ser executado. 
+Ao receber uma mensagem "getcmd", analise o conteúdo e responda com o comando a ser executado.
 
-Ao receber uma mensagem "localcmd", analise o conteúdo, que representa a saída do comando, e utilize-o para futuras interações. 
+Ao receber uma mensagem "localcmd", analise o conteúdo, que representa a saída do comando, e utilize-o para futuras interações.
 
 Ao receber uma mensagem "default", responda normalmente.
 
@@ -99,90 +171,7 @@ Responda apenas com o comando solicitado ou com a análise da saída.
 )
 
 chat_session = model.start_chat(
-  history=[
-    {
-      "role": "user",
-      "parts": [
-        create_getcmd_json("listar arquivos da pasta atual"),
-      ],
-    },
-    {
-      "role": "model",
-      "parts": [
-        "ls \n",
-      ],
-    },
-    {
-      "role": "user",
-      "parts": [
-        create_localcmd_json("ls", "drwxr-xr-x  3 user user 4096 mai 17 08:38 Desktop\ndrwxr-xr-x 16 user user 4096 mai 20 14:14 Documents\ndrwxr-xr-x  8 user user 4096 mai 23 08:13 Downloads\ndrwxrwxr-x  5 user user 4096 mai 23 08:08 GitHub\ndrwxr-xr-x  2 user user 4096 mai 17 10:33 Music\ndrwxrwxr-x  4 user user 4096 jan  8 12:34"),
-      ],
-    },
-    {
-      "role": "model",
-      "parts": [
-        "Output recebido",
-      ],
-    },
-  ]
+  history=[]
 )
 
-while True:
-    try:
-        quest = str(input(">>> "))
-        if quest == "$:exit":                                                                                                                        
-            confirmacao = input("Tem certeza que deseja sair? (s/n): ")                                                                              
-            if confirmacao.lower() == 's':                                                                                                           
-                print('Saindo...')                                                                                                                   
-                break
-            else:
-                continue
-        #response = chat_session.send_message(create_default_json(quest))
-        if("cmd:" in quest[0:4]):
-            prompt = create_getcmd_json(quest)
-            response = chat_session.send_message(prompt)
-            iareturn = response.text
-            print(f"COMANDO RETORNADO: {iareturn}")
-            cmd = response.text.replace("\n", "")
-            cmd = cmd.replace("`", "")
-            cmd = cmd.replace("```", "")
-            cmd = cmd.replace("cmd:", "").strip()
-            cmdoutput = subprocess.check_output(cmd, shell=True)
-            cmdoutdec = cmdoutput.decode()
-            
-            if cmdoutdec == "":
-                print("Saida do comando vazia, nada enviado")
-                continue
-            
-            response = chat_session.send_message(
-                create_localcmd_json(cmd, cmdoutdec)
-            )
-            print(cmdoutdec)
-            md = Markdown(response.text)
-            console = Console()
-            console.print(md)
-            continue
-        
-        if ("/:" in quest[0:2]):
-            cmd = quest.replace("/:", "")
-            cmd = cmd.strip()
-            cmdoutput = subprocess.check_output(cmd, shell=True)
-            cmdoutdec = cmdoutput.decode()
-            prompt = create_localcmd_json(cmd, cmdoutdec)
-            
-            response = chat_session.send_message(prompt)
-
-            print(cmdoutdec)
-            md = Markdown(response.text)
-            console = Console()
-            console.print(md)
-            continue
-
-        prompt = create_default_json(quest)
-        response = chat_session.send_message(prompt)
-        md = Markdown(response.text)
-        console = Console()
-        console.print(md)
-    except Exception as erro:
-        print(f"Erro: {erro}\nNada Enviado")
-        continue
+handle_user_input(chat_session)
