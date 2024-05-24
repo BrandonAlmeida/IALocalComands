@@ -100,8 +100,6 @@ def handle_user_input(chat_session):
                 continue
 
             cmd = create_default_json(quest)
-            print(type(cmd))
-            print(quest)
             response = chat_session.send_message(cmd)
             md = Markdown(response.text)
             console = Console()
