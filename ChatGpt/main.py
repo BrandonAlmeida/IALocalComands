@@ -5,10 +5,10 @@ from openai import OpenAI
 from rich.markdown import Markdown
 from rich.console import Console
 from colorama import Fore, Style
-
+import threading
+import sys
+import signal
 wrkpath = os.getcwd()
-
-# Configuração do cliente OpenAI
 
 #Coleta ID do Assitente e APIKEY
 with open(f"{wrkpath}/ChatGpt/config", "r", encoding="utf-8") as file:
@@ -16,7 +16,90 @@ with open(f"{wrkpath}/ChatGpt/config", "r", encoding="utf-8") as file:
     apikey = lines[0].strip()
     assistant_id = lines[1].strip()
 
+# Configuração do cliente OpenAI
 client = OpenAI(api_key=apikey)
+
+def execute_command(command):
+    # Inicia o processo com Popen
+    process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+    output_lines = []
+
+    def read_output(stream, prefix=''):
+        while True:
+            line = stream.readline()
+            if not line:
+                break
+            print(f"{prefix}{line.strip()}")
+            output_lines.append(f"{prefix}{line.strip()}")
+
+    stdout_thread = threading.Thread(target=read_output, args=(process.stdout,))
+    stderr_thread = threading.Thread(target=read_output, args=(process.stderr, 'Erro: '))
+
+    stdout_thread.start()
+    stderr_thread.start()
+
+    def signal_handler(sig, frame):
+        print('Interrompido! Encerrando o comando...')
+        process.terminate()
+
+    signal.signal(signal.SIGINT, signal_handler)
+
+    stdout_thread.join()
+    stderr_thread.join()
+
+    # Espera o processo terminar e retorna o código de saída
+    process.wait()
+    rc = process.returncode
+
+    complete_output = "\n".join(output_lines)
+    return complete_output, rc
+
+# Função segura para execução de comandos
+'''def execute_command_realtime(command):
+    # Inicia o processo com Popen
+    process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+    # Lista para armazenar toda a saída
+    output_lines = []
+    error_lines = []
+
+    # Lê a saída do comando em tempo real
+    while True:
+        # Lê a linha da saída padrão (stdout)
+        output = process.stdout.readline()
+        # Se a saída estiver vazia, o comando terminou
+        if output == '' and process.poll() is not None:
+            break
+        if output:
+            print(output.strip())
+            output_lines.append(output.strip())
+    
+    # Lê e imprime a saída de erro (stderr)
+    while True:
+        error_output = process.stderr.readline()
+        if error_output == '' and process.poll() is not None:
+            break
+        if error_output:
+            print(f"Erro: {error_output.strip()}")
+            error_lines.append(error_output.strip())
+
+    # Espera o processo terminar e retorna o código de saída
+    rc = process.poll()
+
+    # Junta a saída completa em uma string
+    complete_output = "\n".join(output_lines)
+    complete_error = "\n".join(error_lines)
+
+    return complete_output, complete_error, rc'''
+
+#Função para criar lista de comandos
+def transform_input_to_list(input_str):
+    # Divida a string de entrada por vírgulas
+    command_list = input_str.split(',')
+    # Remova espaços em branco no início e no fim de cada comando
+    command_list = [cmd.strip() for cmd in command_list]
+    return command_list
 
 # Função para buscar o assistente
 def get_assistant(client, assistant_id):
@@ -92,23 +175,48 @@ def main():
 
     while True:
         quest = obter_input()
+        if "exit()" in quest[0:7]:
+            sys.exit()
         if "cmd:" in quest[0:4]:
             try:
+                #Envia a requisição
                 add_message_to_thread(client, thread.id, quest)
                 run = create_and_poll_run(client, thread.id, assistant.id)
+                
+                #Recebe o retorno da IA
                 messages = list_thread_messages(client, thread.id)
                 chat_return = messages.data[0].content[0].text.value
-                cmd_output = subprocess.check_output(chat_return, shell=True)
-                cmd_output = cmd_output.decode()
-                print(cmd_output)
-                add_message_to_thread(client, thread.id, cmd_output)
-                run = create_and_poll_run(client, thread.id, assistant.id)
-                continue
-            except Exception as error:
+                print(f"{Fore.BLUE}{Style.BRIGHT}COMANDO RETORNADO:{Style.RESET_ALL} {Fore.YELLOW}{Style.BRIGHT}{chat_return}{Style.RESET_ALL}")
+                
+                #Transforma o retorno em uma lista
+                commands = transform_input_to_list(chat_return)
+                
+                #Executa os comandos na lista
+                for command  in commands:
+                    cmd_output, return_code = execute_command(command)
+                    #cmd_output = execute_command(command)                    
+                    #Envia o output do comando
+                    if cmd_output:
+                        add_message_to_thread(client, thread.id, cmd_output)
+                    run = create_and_poll_run(client, thread.id, assistant.id)
+                    messages = list_thread_messages(client, thread.id)
+                    chat_return = messages.data[0].content[0].text.value
+                    mdformat = Markdown(chat_return)
+                    console = Console()
+                    console.print(mdformat)
+                    
+            except subprocess.CalledProcessError as error:
                 err = f"Falha na execução do comando, erro: {error}"
                 add_message_to_thread(client, thread.id, err)
                 run = create_and_poll_run(client, thread.id, assistant.id)
                 continue
+            except Exception as error:
+                err = f"Erro inesperado: {error}"
+                add_message_to_thread(client, thread.id, err)
+                run = create_and_poll_run(client, thread.id, assistant.id)
+                continue
+            
+            continue
         if "upload:" in quest[0:7]:
             try:
                 file_paths = quest.split("upload:",1)[1].strip().split()
