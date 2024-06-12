@@ -21,6 +21,11 @@ client = OpenAI(api_key=apikey)
 
 def execute_command(command):
     # Inicia o processo com Popen
+    if "cd " in command[0:3]:
+        dpath = command[3:]
+        os.chdir(dpath)
+        cmdoutdec = subprocess.check_output("pwd", shell=True).decode()
+
     process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
     output_lines = []
@@ -125,7 +130,7 @@ def search_files(client, vector_store_id, query):
 def obter_input():
     """Obtém o input do usuário com destaque em amarelo."""
     print(f"{Fore.BLUE}{Style.BRIGHT}---")
-    print(f"{Fore.GREEN}{Style.BRIGHT}>>> ")
+    print(f"{Fore.GREEN}{Style.BRIGHT}>>> ", end="")
     try:
         input_lines = []
         while True:
