@@ -55,44 +55,6 @@ def execute_command(command):
     complete_output = "\n".join(output_lines)
     return complete_output, rc
 
-# Função segura para execução de comandos
-'''def execute_command_realtime(command):
-    # Inicia o processo com Popen
-    process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-
-    # Lista para armazenar toda a saída
-    output_lines = []
-    error_lines = []
-
-    # Lê a saída do comando em tempo real
-    while True:
-        # Lê a linha da saída padrão (stdout)
-        output = process.stdout.readline()
-        # Se a saída estiver vazia, o comando terminou
-        if output == '' and process.poll() is not None:
-            break
-        if output:
-            print(output.strip())
-            output_lines.append(output.strip())
-    
-    # Lê e imprime a saída de erro (stderr)
-    while True:
-        error_output = process.stderr.readline()
-        if error_output == '' and process.poll() is not None:
-            break
-        if error_output:
-            print(f"Erro: {error_output.strip()}")
-            error_lines.append(error_output.strip())
-
-    # Espera o processo terminar e retorna o código de saída
-    rc = process.poll()
-
-    # Junta a saída completa em uma string
-    complete_output = "\n".join(output_lines)
-    complete_error = "\n".join(error_lines)
-
-    return complete_output, complete_error, rc'''
-
 #Função para criar lista de comandos
 def transform_input_to_list(input_str):
     # Divida a string de entrada por vírgulas
@@ -163,7 +125,16 @@ def search_files(client, vector_store_id, query):
 def obter_input():
     """Obtém o input do usuário com destaque em amarelo."""
     print(f"{Fore.BLUE}{Style.BRIGHT}---")
-    input_text = input(f"{Fore.GREEN}{Style.BRIGHT}>>> ")
+    print(f"{Fore.GREEN}{Style.BRIGHT}>>> ")
+    try:
+        input_lines = []
+        while True:
+            line = input()
+            input_lines.append(line)
+    except EOFError:
+        input_text = '\n'.join(input_lines)
+
+    #input_text = input(f"{Fore.GREEN}{Style.BRIGHT}>>> ")
     print(f"{Fore.BLUE}{Style.BRIGHT}---{Style.RESET_ALL}")
     return input_text
 
