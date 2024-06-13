@@ -8,13 +8,65 @@ from colorama import Fore, Style
 import threading
 import sys
 import signal
+import socket
 wrkpath = os.getcwd()
 
+
+print(os.getenv('USER'))
+def get_user():
+    return f"CHATGPT {os.getenv('USER')}"
+
+def get_host():
+    return socket.gethostname()
+
+def get_current_dir():
+    return os.getcwd()
+
+def get_git_branch():
+    try:
+        branch = subprocess.check_output(
+            ["git", "branch", "--show-current"],
+            stderr=subprocess.STDOUT
+        ).strip().decode('utf-8')
+        if branch:
+            return f"‹{branch}› "
+        return ""
+    except subprocess.CalledProcessError:
+        return ""
+
+def get_return_code():
+    return_code = os.getenv('?', 0)
+    return f"{return_code} ↵" if return_code != 0 else ""
+
+def get_venv():
+    venv = os.getenv("VIRTUAL_ENV")
+    if venv:
+        return f"‹{os.path.basename(venv)}› "
+    return ""
+
+def get_prompt():
+    user_host = f"\033[1m\033[92m{get_user()}👽:\033[91m{get_host()}\033[0m"
+    current_dir = f"📁:\033[1m\033[93m{get_current_dir()} \033[0m"
+    vcs_branch = get_git_branch()
+    venv_prompt = get_venv()
+    return_code = get_return_code()
+    user_symbol = "#" if os.geteuid() == 0 else "$"
+    
+    prompt = f"╭─{user_host}{current_dir}{venv_prompt}{vcs_branch}\n╰─\033[1m{user_symbol}\033[0m "
+    rprompt = f"\033[1m{return_code}\033[0m"
+    
+    return prompt, rprompt
+
 #Coleta ID do Assitente e APIKEY
-with open(f"{wrkpath}/ChatGpt/config", "r", encoding="utf-8") as file:
-    lines = file.readlines()
-    apikey = lines[0].strip()
-    assistant_id = lines[1].strip()
+try:
+    with open(f"{wrkpath}/ChatGpt/config", "r", encoding="utf-8") as file:
+        lines = file.readlines()
+        apikey = lines[0].strip()
+        assistant_id = lines[1].strip()
+except Exception as Err:
+    print("Arquivo de configuração não encontrado")
+    apikey = str(input("Informe sua APIKEY: "))
+    assistant_id = str(input("Informe o ID do ASSISTENTE: "))
 
 # Configuração do cliente OpenAI
 client = OpenAI(api_key=apikey)
@@ -129,8 +181,9 @@ def search_files(client, vector_store_id, query):
 #Estilização do input
 def obter_input():
     """Obtém o input do usuário com destaque em amarelo."""
-    print(f"{Fore.BLUE}{Style.BRIGHT}---")
-    print(f"{Fore.GREEN}{Style.BRIGHT}>>> ", end="")
+    print(f"{Fore.BLUE}{Style.BRIGHT}---{Style.RESET_ALL}")
+    prompt, rprompt = get_prompt()
+    print(prompt, end="")
     try:
         input_lines = []
         while True:
