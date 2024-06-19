@@ -1,38 +1,17 @@
 #!/bin/python3
-from openai import OpenAI
 import subprocess
-import os
-from rich.markdown import Markdown
-from rich.console import Console
 from colorama import Fore, Style
 import sys
 import pygame
-from utils import get_assistant, create_thread, obter_input, add_message_to_thread, create_and_poll_run, list_thread_messages, transform_input_to_list, execute_command, upload_files, search_files, tts
-
-wrkpath = os.getcwd()
-
+from utils import obter_input, add_message_to_thread, create_and_poll_run, transform_input_to_list, execute_command, upload_files, search_files, tts, get_chatinfo, send_msg, output_md
 
 # Main function
 def main():
-    
+
+    #vector_store_id = None  # Inicialize como None
     audio = 0
     #Coleta ID do Assitente e APIKEY
-    try:
-        with open(f"{wrkpath}/ChatGpt/config", "r", encoding="utf-8") as file:
-            lines = file.readlines()
-            apikey = lines[0].strip()
-            assistant_id = lines[1].strip()
-    except Exception as err:
-        print(f"Arquivo de configuração não encontrado, erro: {err}")
-        apikey = str(input("Informe sua APIKEY: "))
-        assistant_id = str(input("Informe o ID do ASSISTENTE: "))
-
-    # Configuração do cliente OpenAI
-    client = OpenAI(api_key=apikey)
-    
-    assistant = get_assistant(client, assistant_id)
-    thread = create_thread(client)
-    vector_store_id = None  # Inicialize como None
+    client, thread, assistant = get_chatinfo()
 
     while True:
 
@@ -52,45 +31,44 @@ def main():
         if "cmd:" in quest[0:4]:
             try:
                 #Envia a requisição
-                add_message_to_thread(client, thread.id, quest)
-                run = create_and_poll_run(client, thread.id, assistant.id)
-                
-                #Recebe o retorno da IA
-                messages = list_thread_messages(client, thread.id)
-                chat_return = messages.data[0].content[0].text.value
+                chat_return = send_msg(client, thread.id, assistant.id, quest)
                 print(f"{Fore.BLUE}{Style.BRIGHT}COMANDO RETORNADO:{Style.RESET_ALL} {Fore.YELLOW}{Style.BRIGHT}{chat_return}{Style.RESET_ALL}")
                 
                 #Transforma o retorno em uma lista
                 commands = transform_input_to_list(chat_return)
                 
                 #Executa os comandos na lista
-                for command  in commands:
+                for command in commands:
                     cmd_output, return_code = execute_command(command)
                     #cmd_output = execute_command(command)                    
                     #Envia o output do comando
                     if cmd_output:
-                        add_message_to_thread(client, thread.id, cmd_output)
-                    run = create_and_poll_run(client, thread.id, assistant.id)
-                    messages = list_thread_messages(client, thread.id)
-                    chat_return = messages.data[0].content[0].text.value
-                    mdformat = Markdown(chat_return)
-                    console = Console()
-                    console.print(mdformat)
+                        chat_return = send_msg(client, thread.id, assistant.id, cmd_output)
+                        output_md(chat_return)
+                    
                     if audio == 1:
                         tts(client, chat_return)
                         
             except subprocess.CalledProcessError as error:
                 err = f"Falha na execução do comando, erro: {error}"
-                add_message_to_thread(client, thread.id, err)
-                run = create_and_poll_run(client, thread.id, assistant.id)
+                chat_return = send_msg(client, thread.id, assistant.id, err)
+                output_md(chat_return)
                 continue
+            
             except Exception as error:
-                err = f"Erro inesperado: {error}"
-                add_message_to_thread(client, thread.id, err)
-                run = create_and_poll_run(client, thread.id, assistant.id)
+                err = f"Falha na execução do comando, erro: {error}"
+                chat_return = send_msg(client, thread.id, assistant.id, err)
+                output_md(chat_return)
                 continue
             
             continue
+        
+        chat_return = send_msg(client, thread.id, assistant.id, quest)
+        if chat_return:
+            output_md(chat_return)
+            if audio == 1:
+                tts(client, chat_return)        
+"""
         if "upload:" in quest[0:7]:
             try:
                 file_paths = quest.split("upload:",1)[1].strip().split()
@@ -118,17 +96,8 @@ def main():
                 add_message_to_thread(client, thread.id, err)
                 run = create_and_poll_run(client, thread.id, assistant.id)
                 continue
-        
-        add_message_to_thread(client, thread.id, quest)
-        run = create_and_poll_run(client, thread.id, assistant.id)
-        messages = list_thread_messages(client, thread.id)
-        if messages.data:
-            chat_return = messages.data[0].content[0].text.value
-            mdformat = Markdown(chat_return)
-            console = Console()
-            console.print(mdformat)
-            if audio == 1:
-                tts(client, chat_return)
+ """       
+
 
 if __name__ == "__main__":
     main()

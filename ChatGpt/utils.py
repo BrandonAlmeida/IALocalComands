@@ -3,10 +3,15 @@ import pygame
 import subprocess
 import socket
 import threading
+from rich.markdown import Markdown
+from rich.console import Console
 from pathlib import Path
 from colorama import Fore, Style
 from time import sleep
 import os
+from openai import OpenAI
+
+wrkpath = os.path.dirname(os.path.realpath(__file__))
 
 def get_user():
     return f"CHATGPT {os.getenv('USER')}"
@@ -52,6 +57,38 @@ def get_prompt():
     
     return prompt, rprompt
 
+#Envia a request ao chat
+def send_msg(client, thread_id, assistant_id, quest):
+    
+    add_message_to_thread(client, thread_id, quest)    
+    run = create_and_poll_run(client, thread_id, assistant_id)
+    messages = list_thread_messages(client, thread_id)
+    if messages.data:
+        chat_return = messages.data[0].content[0].text.value
+    else:
+        chat_return = None
+    return chat_return
+
+#Coleta os dados para funcionamento do chat
+def get_chatinfo():
+    #Coleta ID do Assitente e APIKEY
+    try:
+        with open(f"{wrkpath}/config", "r", encoding="utf-8") as file:
+            lines = file.readlines()
+            apikey = lines[0].strip()
+            assistant_id = lines[1].strip()
+    except Exception as err:
+        print(f"Arquivo de configuração não encontrado, erro: {err}")
+        apikey = str(input("Informe sua APIKEY: "))
+        assistant_id = str(input("Informe o ID do ASSISTENTE: "))
+
+    # Configuração do cliente OpenAI
+    client = OpenAI(api_key=apikey)
+    
+    assistant = get_assistant(client, assistant_id)
+    thread = create_thread(client)
+    return client, thread, assistant
+
 #Função Text to Speech
 def tts(client, text):
     speech_file_path = Path(__file__).parent
@@ -68,7 +105,6 @@ def tts(client, text):
         pygame.time.delay(100)
         
     os.remove(f"{speech_file_path}/speech.mp3")    
-
 
 #Função para executar comandos no sistema operacional
 def execute_command(command):
@@ -198,3 +234,10 @@ def obter_input():
     #input_text = input(f"{Fore.GREEN}{Style.BRIGHT}>>> ")
     print(f"{Fore.BLUE}{Style.BRIGHT}---{Style.RESET_ALL}")
     return input_text
+
+#Estilização do output
+def output_md(chat_return):
+    mdformat = Markdown(chat_return)
+    console = Console()
+    rtrn = console.print(mdformat)
+    return rtrn
